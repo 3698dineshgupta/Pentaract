@@ -53,27 +53,22 @@ WORKDIR /app
 
 COPY ./ui .
 
-# Install pnpm
-RUN npm install -g pnpm
+# Install stable pnpm version
+RUN npm install -g pnpm@8
 
-# Enable scripts properly
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-
-# Disable build approval restrictions
+# Allow scripts
 RUN pnpm config set ignore-scripts false
-RUN pnpm config set enable-pre-post-scripts true
 
 # Install dependencies
-RUN pnpm install --no-frozen-lockfile --ignore-scripts=false
+RUN pnpm install --no-frozen-lockfile
 
-# Explicitly rebuild esbuild
+# Rebuild esbuild binary
 RUN pnpm rebuild esbuild
 
-# Verify esbuild works
+# Verify esbuild
 RUN npx esbuild --version
 
-# Set frontend API base
+# Frontend env
 ENV VITE_API_BASE=/api
 
 # Build frontend

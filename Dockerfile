@@ -51,23 +51,29 @@ FROM node:22-slim AS ui
 
 WORKDIR /app
 
-# Copy frontend source
 COPY ./ui .
 
 # Install pnpm
 RUN npm install -g pnpm
 
-# Fix permissions
+# Enable scripts properly
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+# Disable build approval restrictions
 RUN pnpm config set ignore-scripts false
-RUN pnpm config set unsafe-perm true
+RUN pnpm config set enable-pre-post-scripts true
 
 # Install dependencies
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --no-frozen-lockfile --ignore-scripts=false
 
-# Rebuild esbuild for correct platform
+# Explicitly rebuild esbuild
 RUN pnpm rebuild esbuild
 
-# API base URL
+# Verify esbuild works
+RUN npx esbuild --version
+
+# Set frontend API base
 ENV VITE_API_BASE=/api
 
 # Build frontend

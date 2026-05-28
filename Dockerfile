@@ -1,56 +1,58 @@
 ############################################################################################
-# 1. CHEF BASE
+#### RUST BASE (CHEF)
 ############################################################################################
 FROM clux/muslrust:stable AS chef
-
 USER root
-RUN cargo install cargo-chef --locked
-WORKDIR /app
+
+RUN cargo install cargo-chef
+
+WORKDIR /app/pentaract
 
 ############################################################################################
-# 2. PLANNER
+#### PLANNER
 ############################################################################################
 FROM chef AS planner
 
-COPY Cargo.toml Cargo.lock ./
-COPY pentaract ./pentaract
+# Copy only Rust backend
+COPY ./pentaract .
 
 RUN cargo chef prepare --recipe-path recipe.json
 
 ############################################################################################
-# 3. BUILDER (RUST BACKEND)
+#### BUILDER
 ############################################################################################
 FROM chef AS builder
 
-WORKDIR /app
+WORKDIR /app/pentaract
 
-COPY --from=planner /app/recipe.json recipe.json
+COPY --from=planner /app/pentaract/recipe.json recipe.json
+
 RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
 
-COPY Cargo.toml Cargo.lock ./
-COPY pentaract ./pentaract
+# now copy full backend source
+COPY ./pentaract .
 
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 ############################################################################################
-# 4. UI BUILD
+#### UI BUILD
 ############################################################################################
 FROM node:22-slim AS ui
 
 WORKDIR /app
 
+COPY ./ui .
+
 RUN npm install -g pnpm@9
-
-COPY ui/package.json ui/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
-COPY ui ./
+RUN pnpm install --no-frozen-lockfile
+RUN pnpm rebuild esbuild
 
 ENV VITE_API_BASE=/api
-RUN pnpm build
+
+RUN pnpm run build
 
 ############################################################################################
-# 5. RUNTIME
+#### RUNTIME
 ############################################################################################
 FROM alpine:latest AS runtime
 
@@ -58,11 +60,12 @@ WORKDIR /
 
 RUN apk add --no-cache ca-certificates
 
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/pentaract /pentaract
+# Rust binary
+COPY --from=builder /app/pentaract/target/x86_64-unknown-linux-musl/release/pentaract /pentaract
+
+# UI build output
 COPY --from=ui /app/dist /ui
 
 EXPOSE 3000
-
-ENV RUST_LOG=info
 
 ENTRYPOINT ["/pentaract"]

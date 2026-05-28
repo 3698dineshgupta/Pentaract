@@ -1,48 +1,68 @@
 ############################################################################################
-#### SERVER
+# 1. CHEF BASE
 ############################################################################################
 FROM clux/muslrust:stable AS chef
+
 USER root
-RUN cargo install cargo-chef
+RUN cargo install cargo-chef --locked
 WORKDIR /app
 
 ############################################################################################
-#### PLANNER
+# 2. PLANNER
 ############################################################################################
 FROM chef AS planner
-COPY ./pentaract .
+
+COPY Cargo.toml Cargo.lock ./
+COPY pentaract ./pentaract
+
 RUN cargo chef prepare --recipe-path recipe.json
 
 ############################################################################################
-#### BUILDER
+# 3. BUILDER (RUST BACKEND)
 ############################################################################################
 FROM chef AS builder
+
 WORKDIR /app
+
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
-COPY ./pentaract .
+
+COPY Cargo.toml Cargo.lock ./
+COPY pentaract ./pentaract
+
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 ############################################################################################
-#### UI
+# 4. UI BUILD
 ############################################################################################
 FROM node:22-slim AS ui
+
 WORKDIR /app
-COPY ./ui .
+
 RUN npm install -g pnpm@9
-RUN pnpm config set ignore-scripts false
-RUN pnpm install --no-frozen-lockfile
-RUN pnpm rebuild esbuild
+
+COPY ui/package.json ui/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY ui ./
+
 ENV VITE_API_BASE=/api
-RUN pnpm run build
+RUN pnpm build
 
 ############################################################################################
-#### RUNTIME
+# 5. RUNTIME
 ############################################################################################
 FROM alpine:latest AS runtime
+
 WORKDIR /
+
 RUN apk add --no-cache ca-certificates
+
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/pentaract /pentaract
 COPY --from=ui /app/dist /ui
+
 EXPOSE 3000
+
+ENV RUST_LOG=info
+
 ENTRYPOINT ["/pentaract"]
